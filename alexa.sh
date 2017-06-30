@@ -27,6 +27,7 @@ METADATA="{\
 }\
 }"
 
+echo ${METADATA} | python -m json.tool
 # Audio headers.
 AUDIO_CONTENT_TYPE="Content-Type: audio/L16; rate=16000; channels=1";
 AUDIO_CONTENT_DISPOSITION="Content-Disposition: form-data; name=\"audio\"";
@@ -65,6 +66,9 @@ echo "Creating voice..."
 rm /tmp/pipe.wav
 ln -s /dev/stdout /tmp/pipe.wav
 pico2wave -w /tmp/pipe.wav "${QUESTION}" | tee pico2wav.wav | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
+hexdump -C pico2wav.wav -n 64
+play pico2wav.wav -q
+rm pico2wav.wav
 
 # Then we append closing boundary to request body file.
 echo -e $POST_DATA_END >> multipart_body.txt
@@ -76,10 +80,16 @@ echo -e $POST_DATA_END >> multipart_body.txt
 
 # Compose cURL command and write to output file.
 echo "Making request..."
-curl -s -X POST \
+curl -i -s -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: multipart/form-data; boundary=${BOUNDARY}" \
   --data-binary @multipart_body.txt \
-  https://access-alexa-na.amazon.com/v1/avs/speechrecognizer/recognize \
+  https://access-alexa-na.amazon.com/v1/avs/speechrecognizer/recognize > response.txt
+echo "Recieving response..."
+http-message-parser ./response.txt --pick=multipart[0].body > message.json
+python -m json.tool message.json
+rm response.mp3
+cat response.txt \
   | perl -pe 'BEGIN{undef $/;} s/--.*Content-Type: audio\/mpeg.*(ID3.*)--.*--/$1/smg' \
   | tee response.mp3 | play -t mp3 -q -
+hexdump -C response.mp3 -n 64

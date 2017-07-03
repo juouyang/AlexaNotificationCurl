@@ -65,7 +65,7 @@ echo "Creating voice..."
 #espeak -v en-us "${QUESTION}" --stdout | tee espeak.out | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
 rm /tmp/pipe.wav
 ln -s /dev/stdout /tmp/pipe.wav
-pico2wave -w /tmp/pipe.wav "${QUESTION}" | tee pico2wav.wav | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
+espeak -w /tmp/pipe.wav "${QUESTION}" | tee pico2wav.wav | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
 hexdump -C pico2wav.wav -n 64
 play pico2wav.wav -q
 rm pico2wav.wav
@@ -91,5 +91,11 @@ python -m json.tool message.json
 rm response.mp3
 cat response.txt \
   | perl -pe 'BEGIN{undef $/;} s/--.*Content-Type: audio\/mpeg.*(ID3.*)--.*--/$1/smg' \
-  | tee response.mp3 | play -t mp3 -q -
+  > response.mp3
 hexdump -C response.mp3 -n 64
+play response.mp3
+STREAM_URL=`cat message.json | jq --raw-output '.messageBody.directives[] | select(.name | startswith("play")) | .payload.audioItem.streams[].streamUrl | select(.| startswith("https"))'`
+if [[ ! -z "$STREAM_URL"  && $STREAM_URL == http* ]]; then
+	echo "cvlc "$STREAM_URL
+	cvlc --quiet "$STREAM_URL" vlc://quit
+fi

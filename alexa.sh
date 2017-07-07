@@ -62,13 +62,17 @@ echo -e $POST_DATA_START > multipart_body.txt
 #cat $AUDIO_FILENAME >> multipart_body.txt
 echo "Question: ${QUESTION}"
 echo "Creating voice..."
-#espeak -v en-us "${QUESTION}" --stdout | tee espeak.out | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
-rm /tmp/pipe.wav
-ln -s /dev/stdout /tmp/pipe.wav
-pico2wave -w /tmp/pipe.wav "${QUESTION}" | tee pico2wav.wav | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
-hexdump -C pico2wav.wav -n 64
-play pico2wav.wav -q
-rm pico2wav.wav
+
+espeak -v en-us "${QUESTION}" --stdout | tee espeak.out | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
+hexdump -C espeak.out -n 64
+play espeak.out
+rm -rf espeak.out
+
+#rm -rf /tmp/pipe.wav;ln -s /dev/stdout /tmp/pipe.wav
+#pico2wave -w /tmp/pipe.wav "${QUESTION}" | tee pico2wav.wav | sox - -c 1 -r 16000 -e signed -b 16 -t wav - >> multipart_body.txt
+#hexdump -C pico2wav.wav -n 64
+#play pico2wav.wav -q
+#rm -rf pico2wav.wav
 
 # Then we append closing boundary to request body file.
 echo -e $POST_DATA_END >> multipart_body.txt
@@ -88,12 +92,25 @@ curl -i -s -X POST \
 echo "Recieving response..."
 http-message-parser ./response.txt --pick=multipart[0].body > message.json
 python -m json.tool message.json
-rm response.mp3
-cat response.txt \
-  | perl -pe 'BEGIN{undef $/;} s/--.*Content-Type: audio\/mpeg.*(ID3.*)--.*--/$1/smg' \
-  > response.mp3
-hexdump -C response.mp3 -n 64
-play response.mp3
+
+http-message-parser ./response.txt --pick=multipart[1].body > response1.mp3
+FILE_TYPE=`file -b response1.mp3`
+if [[ $FILE_TYPE == data ]]; then
+	hexdump -C response1.mp3 -n 64
+	play response1.mp3
+fi
+http-message-parser ./response.txt --pick=multipart[2].body > response2.mp3
+FILE_TYPE=`file -b response2.mp3`
+if [[ $FILE_TYPE == data ]]; then
+	hexdump -C response2.mp3 -n 64
+	play response2.mp3
+fi
+
+ART_URL=`cat message.json | jq --raw-output '.messageBody.directives[] | select(.namespace| startswith("TemplateRuntime")) | .payload.content.art.sources | select(.!=null) | .[] | select(.size| startswith("x-large")) | .url'`
+if [[ ! -z "$ART_URL"  && $ART_URL == http* ]]; then
+	echo "feh "$ART_URL
+	feh "$ART_URL"
+fi
 STREAM_URL=`cat message.json | jq --raw-output '.messageBody.directives[] | select(.name | startswith("play")) | .payload.audioItem.streams[].streamUrl | select(.| startswith("https"))'`
 if [[ ! -z "$STREAM_URL"  && $STREAM_URL == http* ]]; then
 	echo "cvlc "$STREAM_URL
